@@ -1,5 +1,8 @@
 # Rust Parser for `multipart/form-data`
 
+> [!WARNING]
+> Disclaimer: This is a work in progress and not ready for production use.
+
 This package provides a Sans-IO parser for [RFC 7578](https://datatracker.ietf.org/doc/html/rfc7578) `multipart/form-data`.
 
 > [!NOTE]
