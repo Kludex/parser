@@ -1,0 +1,22 @@
+[project]
+name = "parser"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.uv]
+dev-dependencies = [
+    "coverage>=7.6.4",
+    "maturin>=1.7.4",
+    "pip>=24.2",
+    "pytest>=8.3.3",
+]
+
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["F401"]

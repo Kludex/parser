@@ -1,0 +1,13 @@
+[package]
+name = "parser"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "parser"
+crate-type = ["cdylib"]
+
+[dependencies]
+log = "0.4.22"
+pyo3 = { version = "0.22.5", features = ["extension-module", "auto-initialize"] }
+pyo3-log = "0.11.0"
