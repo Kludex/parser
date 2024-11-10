@@ -22,21 +22,35 @@ def test_parser_preamble_crlf(parser: MultipartParser):
     assert parser.state == MultipartState.HEADER, "We should be at the 'Header' state, and be waiting for a header."
 
 
-# I need to read the specification. Should this be an error? This is an error on python-multipart.
-@pytest.mark.skip(reason="Unknown expected behavior")
+# NOTE: This errors on `python-multipart`, but on the RFC 2046, it says it shouldn't be an error.
+# Ref.: https://www.rfc-editor.org/rfc/rfc2046.html#section-5.1.1
 def test_parser_preamble_expected_boundary_character(parser: MultipartParser):
     parser.parse(b"--Boundary\r\n")
+    assert parser.state == MultipartState.PREAMBLE, "We should be at the 'PREAMBLE' state."
+
+    parser.parse(b"--boundary\r\n")
+    assert parser.state == MultipartState.HEADER, "We should be at the 'HEADER' state."
 
 
-def test_parser_preamble_invalid_line_break_after_delimiter(parser: MultipartParser):
-    with pytest.raises(ValueError, match="Invalid line break after delimiter"):
-        parser.parse(b"--boundary\rfoobar")
+def test_parser_preamble_cr_after_delimiter(parser: MultipartParser):
+    parser.parse(b"--boundary\r")
+    assert parser.state == MultipartState.PREAMBLE, "We should be at the 'PREAMBLE' state."
+
+    parser.parse(b"--boundary\r\n")
+    assert parser.state == MultipartState.HEADER, "We should be at the 'HEADER' state."
 
 
-# I need to read the specification. Should this be an error, or should we wait for a delimiter that ends with CRLF?
-@pytest.mark.skip(reason="Unknown expected behavior")
+def test_parser_preamble_lf_after_delimiter(parser: MultipartParser):
+    parser.parse(b"--boundary\n")
+    assert parser.state == MultipartState.PREAMBLE, "We should be at the 'PREAMBLE' state."
+
+
 def test_parser_preamble_random_characters_after_delimiter(parser: MultipartParser):
     parser.parse(b"--boundaryfoobar")
+    assert parser.state == MultipartState.PREAMBLE, "We should be at the 'PREAMBLE' state."
+
+    parser.parse(b"--boundary\r\n")
+    assert parser.state == MultipartState.HEADER, "We should be at the 'HEADER' state."
 
 
 def test_parser_preamble_end(parser: MultipartParser):

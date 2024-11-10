@@ -1,5 +1,5 @@
 use core::fmt;
-use std::str;
+use std::{ops::Sub, str};
 
 use log::debug;
 use pyo3::{
@@ -157,39 +157,38 @@ impl MultipartParser {
         let delimiter_len = delimiter.len();
         let buffer = self._buffer[self._offset..].to_vec();
 
-        match buffer.windows(delimiter_len).position(|window| window == delimiter) {
-            Some(index) => {
-                debug!("{:?}: delimiter found at index: {}.", self._state, index);
-                // Delimiter found, skip it
-                let tail = match buffer.get(index + delimiter_len..index + delimiter_len + 2) {
-                    Some(tail) => tail.to_vec(),
-                    None => {
-                        self._need_data = true;
-                        return Ok(MultipartState::Preamble);
-                    }
-                };
+        if let Some(index) = buffer.windows(delimiter_len).position(|window| window == delimiter) {
+            if let Some(after_delimiter) = buffer.get(index + delimiter_len..) {
+                let tail = after_delimiter.get(..2).unwrap_or_default();
 
                 // First delimiter found -> End of preamble
                 if tail == CRLF {
-                    self._offset = self._offset + index + delimiter_len + 2;
+                    self._offset += index + delimiter_len + 2;
                     return Ok(MultipartState::Header);
                 }
+
                 // First delimiter is terminator -> Empty multipart stream
                 if tail == b"--" {
                     return Ok(MultipartState::End);
                 }
+
                 // Bad newline after valid delimiter -> Broken client
-                return Err(PyValueError::new_err("Invalid line break after delimiter"));
-            }
-            None => {
-                // Delimiter not found, skip data until we find one
-                if self._buffer.len() > delimiter_len + 4 {
-                    self._offset = self._buffer.len() - (delimiter_len + 4);
+                if tail == b"\n" {
+                    return Err(PyValueError::new_err("Invalid line break after delimiter"));
                 }
-                self._need_data = true;
-                Ok(MultipartState::Preamble)
+
+                // CR found after delimiter, but next byte is not LF -> Move offset
+                if tail.len() > 1 && tail[0] == CR {
+                    self._offset += index + delimiter_len + 1;
+                    return Ok(MultipartState::Preamble);
+                }
             }
         }
+
+        // Delimiter not found -> Skip data
+        self._offset = self._offset.max(self._buffer.len().saturating_sub(delimiter_len + 4));
+        self._need_data = true;
+        Ok(MultipartState::Preamble)
     }
 
     fn handle_header(&mut self) -> PyResult<MultipartState> {
