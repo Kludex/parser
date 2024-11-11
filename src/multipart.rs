@@ -57,6 +57,7 @@ impl MultipartPart {
         let key = &data[..parts];
         let value = &data[parts + 1..];
 
+        // TODO: The encoding should be determined by the Content-Type header.
         let key = str::from_utf8(key).map_err(|_| PyValueError::new_err("Invalid key"))?.trim();
         let value = str::from_utf8(value).map_err(|_| PyValueError::new_err("Invalid value"))?.trim();
 
@@ -94,6 +95,7 @@ impl MultipartParser {
     #[new]
     #[pyo3(signature = (boundary, max_size = None))]
     fn new(boundary: Vec<u8>, max_size: Option<usize>) -> Self {
+        // TODO: Check the size of `boundary`. It should be less than 70 characters.
         let _delimiter = [b"--".as_slice(), &boundary].concat();
 
         MultipartParser {

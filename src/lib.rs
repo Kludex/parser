@@ -9,5 +9,6 @@ fn parser(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<multipart::MultipartParser>()?;
     m.add_class::<multipart::MultipartState>()?;
     m.add_class::<multipart::MultipartPart>()?;
+
     Ok(())
 }
