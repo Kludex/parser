@@ -7,6 +7,11 @@ from parser import MultipartParser, MultipartState, MultipartPart
 logging.getLogger().setLevel(logging.DEBUG)
 
 
+def test_parser_size_boundary():
+    with pytest.raises(ValueError, match="The boundary length should not surpass 70 bytes."):
+        MultipartParser(b"x" * 71)
+
+
 @pytest.fixture(scope="function")
 def parser() -> MultipartParser:
     return MultipartParser(b"boundary")

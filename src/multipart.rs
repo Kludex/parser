@@ -1,3 +1,5 @@
+//! Parser for `multipart/form-data`
+
 use core::fmt;
 use std::str;
 
@@ -94,11 +96,14 @@ pub struct MultipartParser {
 impl MultipartParser {
     #[new]
     #[pyo3(signature = (boundary, max_size = None))]
-    fn new(boundary: Vec<u8>, max_size: Option<usize>) -> Self {
-        // TODO: Check the size of `boundary`. It should be less than 70 characters.
+    fn new(boundary: Vec<u8>, max_size: Option<usize>) -> Result<Self, PyErr> {
+        if boundary.len() > 70 {
+            return Err(PyValueError::new_err("The boundary length should not surpass 70 bytes."));
+        }
+
         let _delimiter = [b"--".as_slice(), &boundary].concat();
 
-        MultipartParser {
+        Ok(MultipartParser {
             boundary: boundary,
             max_size: max_size,
             _state: MultipartState::Preamble,
@@ -107,7 +112,7 @@ impl MultipartParser {
             _offset: 0,
             _events: Vec::new(),
             _need_data: false,
-        }
+        })
     }
 
     #[getter]
