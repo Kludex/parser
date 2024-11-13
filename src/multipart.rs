@@ -57,6 +57,7 @@ impl fmt::Display for BytesWrapper {
     }
 }
 
+// TODO: To be used as the output of the parser instead of `MultipartPart`.
 enum FormData {
     Field {
         /// The name of the form field. This field MUST be present.
