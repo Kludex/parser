@@ -20,7 +20,7 @@ pip install multipart-parser
 from multipart_parser import MultipartParser, MultipartPart
 
 parser = MultipartParser(boundary=b"boundary")
-parser.parse(b"\r\n--boundary\r\nContent-Disposition: form-data\r\n\r\nBody\r\n--boundary--\r\n")
+parser.parse(b'\r\n--boundary\r\nContent-Disposition: form-data; name="user"\r\n\r\nPotato\r\n--boundary--\r\n')
 ```
 
 ## Contribute
