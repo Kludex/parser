@@ -8,7 +8,8 @@ logging.getLogger().setLevel(logging.DEBUG)
 
 
 def test_parser_size_boundary():
-    with pytest.raises(ValueError, match="The boundary length should not surpass 70 bytes."):
+    MultipartParser(b"x" * 70)
+    with pytest.raises(ValueError, match="Boundary length must be between 1 and 70 characters."):
         MultipartParser(b"x" * 71)
 
 
@@ -100,3 +101,20 @@ def test_parser_body(parser: MultipartParser):
     event = parser.next_event()
     assert isinstance(event, MultipartPart.Body)
     assert event.data == b"Hello World!"
+
+
+def test_parser_first_form_data(parser: MultipartParser):
+    parser.parse(
+        b"\r\n--boundary\r\n"
+        b'content-disposition: form-data; name="field1"\r\n'
+        b"content-type: text/plain;charset=UTF-8\r\n"
+        b"\r\n"
+        b"Joe owes =E2=82=AC100.\r\n"
+        b"--boundary--"
+    )
+    assert parser.state == MultipartState.END, "We should be at the 'END' state, and be done parsing."
+
+    # part = parser.next_part()
+    # assert isinstance(part, Field)
+    # assert part.name == "field1"
+    # assert part.data == "Joe owes €100."

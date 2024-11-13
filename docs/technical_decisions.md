@@ -12,3 +12,11 @@ According to [RFC 2046#5.1.1](https://www.rfc-editor.org/rfc/rfc2046.html#sectio
 > before the first boundary delimiter line or after the last one.
 
 For that, we also **ignore** any additional information **before the first boundary delimiter**.
+
+## Ignore `Content-Transfer-Encoding` header
+
+As per [RFC 7578#4.7](https://www.rfc-editor.org/rfc/rfc7578.html#section-4.7):
+
+> [...] Senders SHOULD NOT generate any parts with a Content-Transfer-Encoding header field.
+
+For that, we also **ignore** the `Content-Transfer-Encoding` header.

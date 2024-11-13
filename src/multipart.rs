@@ -1,6 +1,21 @@
-//! Parser for `multipart/form-data`
+//! Sans-IO parser for [RFC 7578](https://datatracker.ietf.org/doc/html/rfc7578) `multipart/form-data`.
+//!
+//! This parser works based on the following states:
+//!
+//! ```not-rust
+//! State 1: Preamble
+//!     State 2: Header
+//!     State 4: End (final)
+//! State 2: Header
+//!     State 3: Body
+//!     State 4: End (final)
+//! State 3: Body
+//!     State 2: Header
+//!     State 4: End (final)
+//! ```
 
 use core::fmt;
+use std::collections::HashMap;
 use std::str;
 
 use log::debug;
@@ -40,6 +55,33 @@ impl fmt::Display for BytesWrapper {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self.0)
     }
+}
+
+enum FormData {
+    Field {
+        /// The name of the form field. This field MUST be present.
+        /// [RFC 7578 - Section 4.2](https://datatracker.ietf.org/doc/html/rfc7578#section-4.2)
+        name: String,
+
+        /// The value of the field part.
+        value: String,
+    },
+    File {
+        /// The name of the form field. This field MUST be present.
+        /// [RFC 7578 - Section 4.2](https://datatracker.ietf.org/doc/html/rfc7578#section-4.2)
+        name: String,
+
+        /// The filename of the file being uploaded. This field is optional.
+        /// [RFC 7578 - Section 4.2](https://datatracker.ietf.org/doc/html/rfc7578#section-4.2)
+        filename: Option<String>,
+
+        /// Each part MAY have a Content-Type header field, which defaults to "text/plain".
+        /// [RFC 7578 - Section 4.4](https://datatracker.ietf.org/doc/html/rfc7578#section-4.4)
+        content_type: Option<String>,
+
+        /// The data of the file part.
+        data: Vec<u8>,
+    },
 }
 
 #[pyclass]
@@ -82,7 +124,7 @@ impl MultipartPart {
 
 #[pyclass]
 pub struct MultipartParser {
-    boundary: Vec<u8>,
+    _boundary: Vec<u8>,
     max_size: Option<usize>,
     _state: MultipartState,
     _buffer: Vec<u8>,
@@ -97,14 +139,16 @@ impl MultipartParser {
     #[new]
     #[pyo3(signature = (boundary, max_size = None))]
     fn new(boundary: Vec<u8>, max_size: Option<usize>) -> Result<Self, PyErr> {
-        if boundary.len() > 70 {
-            return Err(PyValueError::new_err("The boundary length should not surpass 70 bytes."));
+        // According to https://www.rfc-editor.org/rfc/rfc2046.html#section-5.1.1, the boundary
+        // should be between 1 and 70 bytes.
+        if boundary.len() < 1 || boundary.len() > 70 {
+            return Err(PyValueError::new_err("Boundary length must be between 1 and 70 characters."));
         }
 
         let _delimiter = [b"--".as_slice(), &boundary].concat();
 
         Ok(MultipartParser {
-            boundary: boundary,
+            _boundary: boundary,
             max_size: max_size,
             _state: MultipartState::Preamble,
             _buffer: Vec::new(),
@@ -148,6 +192,8 @@ impl MultipartParser {
 
         Ok(())
     }
+
+    // fn next_part(&mut self) -> PyResult<Option<FormData>> {}
 
     fn next_event(&mut self) -> PyResult<Option<MultipartPart>> {
         if self._events.is_empty() {
@@ -261,7 +307,6 @@ impl MultipartParser {
                             return Ok(MultipartState::End);
                         }
                         _ => {
-                            debug!("Am I here?");
                             self._need_data = true;
                             return Ok(MultipartState::Body);
                         }
