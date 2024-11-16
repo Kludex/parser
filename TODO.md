@@ -5,6 +5,7 @@
 - [ ] Make sure `Content-Disposition` is present in each the part, or raise an error.
 - [ ] Limit the size of the part, and the size of the file.
 - [ ] Implement `_charset_`.
+- [ ] Error on multiple `Content-Disposition` headers.
 
 ## MultipartBuilder
 

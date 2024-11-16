@@ -1,6 +1,8 @@
 use pyo3::prelude::*;
 
+mod headers;
 mod multipart;
+
 
 #[pymodule]
 fn parser(m: &Bound<'_, PyModule>) -> PyResult<()> {

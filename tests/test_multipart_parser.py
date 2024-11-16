@@ -65,38 +65,38 @@ def test_parser_preamble_end(parser: MultipartParser):
 
 
 def test_parser_header(parser: MultipartParser):
-    parser.parse(b"\r\n--boundary\r\nContent-Type: text/plain\r\n\r\n")
+    parser.parse(b'\r\n--boundary\r\nContent-Disposition: form-data; name="field1"\r\n\r\n')
     assert parser.state == MultipartState.BODY, "We should be at the 'Body' state, and be waiting for a body."
 
     event = parser.next_event()
     assert isinstance(event, MultipartPart.Header)
-    assert event.name == "Content-Type"
-    assert event.value == "text/plain"
+    assert event.name == "content-disposition"
+    assert event.value == 'form-data; name="field1"'
 
 
 def test_parser_multiple_headers(parser: MultipartParser):
-    parser.parse(b"\r\n--boundary\r\nContent-Type: text/plain\r\nContent-Length: 5\r\n\r\n")
+    parser.parse(b'\r\n--boundary\r\nContent-Disposition: form-data; name="field1"\r\nContent-Type: text/plain\r\n\r\n')
     assert parser.state == MultipartState.BODY, "We should be at the 'Body' state, and be waiting for a body."
 
     event = parser.next_event()
     assert isinstance(event, MultipartPart.Header)
-    assert event.name == "Content-Type"
-    assert event.value == "text/plain"
+    assert event.name == "content-disposition"
+    assert event.value == 'form-data; name="field1"'
 
     event = parser.next_event()
     assert isinstance(event, MultipartPart.Header)
-    assert event.name == "Content-Length"
-    assert event.value == "5"
+    assert event.name == "content-type"
+    assert event.value == "text/plain"
 
 
 def test_parser_body(parser: MultipartParser):
-    parser.parse(b"\r\n--boundary\r\nContent-Type: text/plain\r\n\r\nHello World!--boundary--")
+    parser.parse(b'\r\n--boundary\r\nContent-Disposition: form-data; name="field1"\r\n\r\nHello World!--boundary--')
     assert parser.state == MultipartState.END, "We should be at the 'END' state, and be done parsing."
 
     event = parser.next_event()
     assert isinstance(event, MultipartPart.Header)
-    assert event.name == "Content-Type"
-    assert event.value == "text/plain"
+    assert event.name == "content-disposition"
+    assert event.value == 'form-data; name="field1"'
 
     event = parser.next_event()
     assert isinstance(event, MultipartPart.Body)
