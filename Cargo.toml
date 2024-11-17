@@ -9,9 +9,6 @@ authors = ["Marcelo Trylesinski <marcelotryle@gmail.com>"]
 name = "parser"
 crate-type = ["cdylib"]
 
-[toolchain]
-channel = "nightly"
-
 [dependencies]
 # TODO: Replace log by tracing.
 log = "0.4.22"

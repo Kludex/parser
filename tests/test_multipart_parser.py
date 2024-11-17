@@ -2,7 +2,7 @@ import logging
 
 import pytest
 
-from parser import MultipartParser, MultipartState, MultipartPart
+from parser import Field, File, MultipartParser, MultipartState, MultipartPart
 
 logging.getLogger().setLevel(logging.DEBUG)
 
@@ -90,7 +90,7 @@ def test_parser_multiple_headers(parser: MultipartParser):
 
 
 def test_parser_body(parser: MultipartParser):
-    parser.parse(b'\r\n--boundary\r\nContent-Disposition: form-data; name="field1"\r\n\r\nHello World!--boundary--')
+    parser.parse(b'\r\n--boundary\r\nContent-Disposition: form-data; name="field1"\r\n\r\nHello World!\r\n--boundary--')
     assert parser.state == MultipartState.END, "We should be at the 'END' state, and be done parsing."
 
     event = parser.next_event()
@@ -109,12 +109,87 @@ def test_parser_first_form_data(parser: MultipartParser):
         b'content-disposition: form-data; name="field1"\r\n'
         b"content-type: text/plain;charset=UTF-8\r\n"
         b"\r\n"
-        b"Joe owes =E2=82=AC100.\r\n"
-        b"--boundary--"
+        b"Joe owes =E2=82=AC100."
+        b"\r\n--boundary--"
     )
     assert parser.state == MultipartState.END, "We should be at the 'END' state, and be done parsing."
 
-    # part = parser.next_part()
-    # assert isinstance(part, Field)
-    # assert part.name == "field1"
-    # assert part.data == "Joe owes €100."
+    part = parser.next_part()
+    assert isinstance(part, Field)
+    assert part.name == '"field1"'
+    assert part.data == b"Joe owes =E2=82=AC100."
+
+
+def test_parser_multiple_form_data(parser: MultipartParser):
+    parser.parse(
+        b"\r\n--boundary\r\n"
+        b'content-disposition: form-data; name="field1"\r\n'
+        b"content-type: text/plain;charset=UTF-8\r\n"
+        b"\r\n"
+        b"Joe owes =E2=82=AC100.\r\n"
+        b"--boundary\r\n"
+        b'content-disposition: form-data; name="field2"\r\n'
+        b"content-type: text/plain;charset=UTF-8\r\n"
+        b"\r\n"
+        b"Hello World!"
+        b"\r\n--boundary--"
+    )
+    assert parser.state == MultipartState.END, "We should be at the 'END' state, and be done parsing."
+
+    part = parser.next_part()
+    assert isinstance(part, Field)
+    assert part.name == '"field1"'
+    assert part.data == b"Joe owes =E2=82=AC100."
+
+    part = parser.next_part()
+    assert isinstance(part, Field)
+    assert part.name == '"field2"'
+    assert part.data == b"Hello World!"
+
+
+def test_parser_file_data(parser: MultipartParser):
+    parser.parse(
+        b"\r\n--boundary\r\n"
+        b'content-disposition: form-data; name="file"; filename="example.txt"\r\n'
+        b"content-type: text/plain;charset=UTF-8\r\n"
+        b"\r\n"
+        b"Hello World!"
+        b"\r\n--boundary--"
+    )
+    assert parser.state == MultipartState.END, "We should be at the 'END' state, and be done parsing."
+
+    part = parser.next_part()
+    assert isinstance(part, File)
+    assert part.name == '"file"'
+    assert part.filename == '"example.txt"'
+    assert part.data == b"Hello World!"
+
+
+def test_parser_missing_content_disposition(parser: MultipartParser):
+    with pytest.raises(ValueError, match="Missing content-disposition header"):
+        parser.parse(
+            b"\r\n--boundary"
+            b"\r\n"
+            b"content-type: text/plain;charset=UTF-8\r\n"
+            b"\r\n"
+            b"Big Hello World Message!"
+            b"\r\n--boundary--"
+        )
+
+
+def test_parser_multiple_content_disposition(parser: MultipartParser):
+    parser.parse(
+        b"\r\n--boundary"
+        b"\r\n"
+        b'content-disposition: form-data; name="field1"\r\n'
+        b'content-disposition: form-data; name="field2"\r\n'
+        b"\r\n"
+        b"Big Hello World Message!"
+        b"\r\n--boundary--"
+    )
+    assert parser.state == MultipartState.END, "We should be at the 'END' state, and be done parsing."
+
+    part = parser.next_part()
+    assert isinstance(part, Field)
+    assert part.name == '"field2"'
+    assert part.data == b"Big Hello World Message!"

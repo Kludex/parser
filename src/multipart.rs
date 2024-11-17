@@ -15,7 +15,7 @@
 //! ```
 
 use core::fmt;
-use std::{collections::HashMap, convert::TryFrom, str};
+use std::{collections::HashMap, str};
 
 use log::debug;
 use pyo3::{
@@ -24,7 +24,7 @@ use pyo3::{
     types::PyBytes,
 };
 
-use crate::headers;
+use crate::form_data::FormData;
 
 const CR: u8 = b'\r';
 const LF: u8 = b'\n';
@@ -58,165 +58,6 @@ impl fmt::Display for BytesWrapper {
     }
 }
 
-struct Field {
-    /// The name of the form field. This field MUST be present.
-    /// [RFC 7578 - Section 4.2](https://datatracker.ietf.org/doc/html/rfc7578#section-4.2)
-    name: String,
-
-    /// Each part MAY have a Content-Type header field, which defaults to "text/plain".
-    /// [RFC 7578 - Section 4.4](https://datatracker.ietf.org/doc/html/rfc7578#section-4.4)
-    content_type: String,
-
-    /// The charset to use when decoding the field part.
-    charset: String,
-
-    /// The data of the field part.
-    data: Vec<u8>,
-}
-
-impl Field {
-    fn new(name: String, content_type: String, charset: String) -> Self {
-        Self {
-            name,
-            content_type,
-            charset,
-            data: Vec::new(),
-        }
-    }
-
-    fn append_data(&mut self, data: Vec<u8>) {
-        self.data.extend(data);
-    }
-}
-
-struct File {
-    /// The name of the form field. This field MUST be present.
-    /// [RFC 7578 - Section 4.2](https://datatracker.ietf.org/doc/html/rfc7578#section-4.2)
-    name: String,
-
-    /// The filename of the file being uploaded.
-    /// [RFC 7578 - Section 4.2](https://datatracker.ietf.org/doc/html/rfc7578#section-4.2)
-    filename: String,
-
-    /// Each part MAY have a Content-Type header field, which defaults to "text/plain".
-    /// [RFC 7578 - Section 4.4](https://datatracker.ietf.org/doc/html/rfc7578#section-4.4)
-    content_type: String,
-
-    /// The charset to use when decoding the file part.
-    charset: String,
-
-    /// The data of the file part.
-    data: Vec<u8>,
-}
-
-impl File {
-    fn new(name: String, filename: String, content_type: String, charset: String) -> Self {
-        Self {
-            name,
-            filename,
-            content_type,
-            charset,
-            data: Vec::new(),
-        }
-    }
-
-    fn append_data(&mut self, data: Vec<u8>) {
-        self.data.extend(data);
-    }
-}
-
-// TODO: To be used as the output of the parser instead of `MultipartPart`.
-enum FormData {
-    Field(Field),
-    File(File),
-}
-
-impl TryFrom<HashMap<String, String>> for FormData {
-    type Error = PyErr;
-
-    fn try_from(headers: HashMap<String, String>) -> PyResult<Self> {
-        let (content_type, params) = match headers.get("content-type") {
-            Some(value) => match headers::parse_options_header(value.to_string()) {
-                Ok((content_type, params)) => (content_type, params),
-                Err(e) => return Err(PyValueError::new_err(e)),
-            },
-            None => ("text/plain".to_string(), HashMap::new()),
-        };
-
-        let charset = params.get("charset").unwrap_or(&"utf-8".to_string()).to_string();
-
-        let (content_disposition, params) = match headers.get("content-disposition") {
-            Some(value) => match headers::parse_options_header(value.to_string()) {
-                Ok((content_disposition, params)) => (content_disposition, params),
-                Err(e) => return Err(PyValueError::new_err(e)),
-            },
-            None => return Err(PyValueError::new_err("Missing content-disposition header")),
-        };
-
-        if content_disposition != "form-data" {
-            return Err(PyValueError::new_err("Invalid content-disposition"));
-        }
-
-        let name = match params.get("name") {
-            Some(name) => name,
-            None => return Err(PyValueError::new_err("Parameter 'name' not found in content-disposition.")),
-        };
-
-        match params.get("filename") {
-            Some(filename) => {
-                let file = File::new(name.clone(), filename.clone(), content_type, charset.clone());
-                Ok(FormData::File(file))
-            }
-            None => {
-                let field = Field::new(name.clone(), content_type, charset.clone());
-                Ok(FormData::Field(field))
-            }
-        }
-    }
-}
-
-impl FormData {
-    fn from_headers(headers: HashMap<String, String>) -> PyResult<Self> {
-        let (content_type, params) = match headers.get("content-type") {
-            Some(value) => match headers::parse_options_header(value.to_string()) {
-                Ok((content_type, params)) => (content_type, params),
-                Err(e) => return Err(PyValueError::new_err(e)),
-            },
-            None => ("text/plain".to_string(), HashMap::new()),
-        };
-
-        let charset = params.get("charset").unwrap_or(&"utf-8".to_string()).to_string();
-
-        let (content_disposition, params) = match headers.get("content-disposition") {
-            Some(value) => match headers::parse_options_header(value.to_string()) {
-                Ok((content_disposition, params)) => (content_disposition, params),
-                Err(e) => return Err(PyValueError::new_err(e)),
-            },
-            None => return Err(PyValueError::new_err("Missing content-disposition header")),
-        };
-
-        if content_disposition != "form-data" {
-            return Err(PyValueError::new_err("Invalid content-disposition"));
-        }
-
-        let name = match params.get("name") {
-            Some(name) => name,
-            None => return Err(PyValueError::new_err("Parameter 'name' not found in content-disposition.")),
-        };
-
-        match params.get("filename") {
-            Some(filename) => {
-                let file = File::new(name.clone(), filename.clone(), content_type, charset.clone());
-                Ok(FormData::File(file))
-            }
-            None => {
-                let field = Field::new(name.clone(), content_type, charset.clone());
-                Ok(FormData::Field(field))
-            }
-        }
-    }
-}
-
 #[pyclass]
 #[derive(Debug, Clone)]
 pub enum MultipartPart {
@@ -226,6 +67,8 @@ pub enum MultipartPart {
 
 impl MultipartPart {
     fn build_header(data: &[u8]) -> PyResult<Self> {
+        debug!("Building header from: {:?}", bytes_to_str(data.to_vec()));
+
         let parts = match data.iter().position(|&c| c == b':') {
             Some(index) => index,
             None => return Err(PyValueError::new_err("Malformed header")),
@@ -266,7 +109,13 @@ pub struct MultipartParser {
 
     _state: MultipartState,
     _buffer: Vec<u8>,
+
+    /// The boundary with a leading `--`.
+    _dash_boundary: Vec<u8>,
+
+    /// The combination of CRLF + `--` + boundary.
     _delimiter: Vec<u8>,
+
     _offset: usize,
     _events: Vec<MultipartPart>,
     _need_data: bool,
@@ -276,6 +125,9 @@ pub struct MultipartParser {
 
     /// The current part being parsed.
     _current_part: Option<FormData>,
+
+    /// The parsed parts.
+    _parts: Vec<FormData>,
 }
 
 #[pymethods]
@@ -295,7 +147,8 @@ impl MultipartParser {
             return Err(PyRuntimeError::new_err("The only supported charset is 'utf8'."));
         }
 
-        let _delimiter = [b"--".as_slice(), &boundary].concat();
+        let _dash_boundary = [b"--".as_slice(), &boundary].concat();
+        let _delimiter = [b"\r\n".as_slice(), &_dash_boundary].concat();
 
         Ok(MultipartParser {
             _boundary: boundary,
@@ -303,13 +156,15 @@ impl MultipartParser {
             _header_charset: header_charset.unwrap_or("utf8").to_string(),
             _state: MultipartState::Preamble,
             _buffer: Vec::new(),
-            _delimiter: _delimiter,
+            _dash_boundary,
+            _delimiter,
             _offset: 0,
             _events: Vec::new(),
             _need_data: false,
 
             _current_headers: HashMap::new(),
             _current_part: None,
+            _parts: Vec::new(),
         })
     }
 
@@ -347,7 +202,12 @@ impl MultipartParser {
         Ok(())
     }
 
-    // fn next_part(&mut self) -> PyResult<Option<FormData>> {}
+    fn next_part(&mut self) -> PyResult<Option<FormData>> {
+        match self._parts.is_empty() {
+            true => Ok(None),
+            false => Ok(Some(self._parts.remove(0))),
+        }
+    }
 
     fn next_event(&mut self) -> PyResult<Option<MultipartPart>> {
         match self._events.is_empty() {
@@ -359,7 +219,7 @@ impl MultipartParser {
 
 impl MultipartParser {
     fn handle_preamble(&mut self) -> PyResult<MultipartState> {
-        let delimiter = self._delimiter.clone();
+        let delimiter = self._dash_boundary.clone();
         let delimiter_len = delimiter.len();
         let buffer = self._buffer[self._offset..].to_vec();
 
@@ -399,6 +259,8 @@ impl MultipartParser {
 
     fn handle_header(&mut self) -> PyResult<MultipartState> {
         let buffer = self._buffer[self._offset..].to_vec();
+
+        debug!("Buffer: {:?}", bytes_to_str(buffer.clone()));
 
         // We are looking for a CRLF sequence to separate headers from body.
         match buffer.windows(2).position(|window| window == CRLF) {
@@ -462,16 +324,18 @@ impl MultipartParser {
                                 data: BytesWrapper(buffer[..index].to_vec()),
                                 complete: true,
                             });
-                            self._offset = self._offset + index;
+                            self.insert_data(buffer[..index].to_vec(), true)?;
+                            self._offset += index + delimiter_len + 2;
                             return Ok(MultipartState::Header);
                         }
                         // Delimiter was terminator, end of multipart stream.
                         [b'-', b'-'] => {
+                            self.insert_data(buffer[..index].to_vec(), true)?;
                             self._events.push(MultipartPart::Body {
                                 data: BytesWrapper(buffer[..index].to_vec()),
                                 complete: true,
                             });
-                            self._offset = self._offset + index;
+                            self._offset += index + delimiter_len + 2;
                             return Ok(MultipartState::End);
                         }
                         _ => {
@@ -489,6 +353,7 @@ impl MultipartParser {
                 // Delimiter not found, wait for more data.
                 debug!("{:?}: delimiter not found.", self._state);
                 if buffer.len() > delimiter_len + 3 {
+                    self.insert_data(buffer[..buffer.len() - (delimiter_len + 3)].to_vec(), false)?;
                     self._events.push(MultipartPart::Body {
                         data: BytesWrapper(buffer[..buffer.len() - (delimiter_len + 3)].to_vec()),
                         complete: false,
@@ -499,6 +364,21 @@ impl MultipartParser {
                 Ok(MultipartState::Body)
             }
         }
+    }
+
+    fn insert_data(&mut self, data: Vec<u8>, complete: bool) -> PyResult<()> {
+        match self._current_part.take() {
+            Some(mut part) => {
+                part.append_data(data);
+
+                if complete {
+                    self._parts.push(part);
+                    self._current_part = None;
+                }
+            }
+            None => return Err(PyValueError::new_err("Missing current part")),
+        }
+        Ok(())
     }
 }
 

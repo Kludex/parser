@@ -17,10 +17,15 @@ pip install multipart-parser
 ## Usage
 
 ```py
-from multipart_parser import MultipartParser, MultipartPart
+from multipart_parser import MultipartParser, MultipartPart, Field
 
 parser = MultipartParser(boundary=b"boundary")
 parser.parse(b'\r\n--boundary\r\nContent-Disposition: form-data; name="user"\r\n\r\nPotato\r\n--boundary--\r\n')
+
+field = parser.next_part()
+assert isinstance(field, Field)
+assert field.name == '"user"'
+assert field.data == "Potato"
 ```
 
 ## Contribute
