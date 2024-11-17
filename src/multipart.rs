@@ -67,8 +67,6 @@ pub enum MultipartPart {
 
 impl MultipartPart {
     fn build_header(data: &[u8]) -> PyResult<Self> {
-        debug!("Building header from: {:?}", bytes_to_str(data.to_vec()));
-
         let parts = match data.iter().position(|&c| c == b':') {
             Some(index) => index,
             None => return Err(PyValueError::new_err("Malformed header")),

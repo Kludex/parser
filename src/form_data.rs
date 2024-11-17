@@ -1,4 +1,3 @@
-use log::debug;
 use std::fmt;
 use std::{collections::HashMap, convert::TryFrom};
 
@@ -103,9 +102,6 @@ impl TryFrom<HashMap<String, String>> for FormData {
             Some(name) => name,
             None => return Err(PyValueError::new_err("Parameter 'name' not found in content-disposition.")),
         };
-
-        debug!("Name: {:?}", name);
-        debug!("File name: {:?}", params);
 
         match params.get("filename") {
             Some(filename) => Ok(FormData::File {
