@@ -301,7 +301,8 @@ def test_enforces_maximum_total_header_size_on_raw_bytes() -> None:
     raw_header = b"X-Raw: \t value \t "
     header_section = raw_header + b"\r\n\r\n"
     body = b"--boundary\r\n" + header_section + b"data\r\n--boundary--"
-    parser = MultipartParser(b"boundary", max_total_header_size=len(header_section))
+    total_header_size = len(b"\r\n") + len(header_section)
+    parser = MultipartParser(b"boundary", max_total_header_size=total_header_size)
 
     events = feed(parser, body, [1] * len(body))
 
@@ -310,7 +311,7 @@ def test_enforces_maximum_total_header_size_on_raw_bytes() -> None:
     assert isinstance(begin, PartBegin)
     assert begin.headers == [(b"X-Raw", b"value")]
 
-    parser = MultipartParser(b"boundary", max_total_header_size=len(header_section) - 1)
+    parser = MultipartParser(b"boundary", max_total_header_size=total_header_size - 1)
     with pytest.raises(RuntimeError, match="Part exceeds maximum total header size"):
         parser.feed(body)
 
@@ -323,6 +324,30 @@ def test_enforces_maximum_total_header_size_while_streaming() -> None:
         parser.feed(b"123")
 
 
+def test_enforces_maximum_total_header_size_in_boundary_padding() -> None:
+    parser = MultipartParser(b"boundary", max_total_header_size=4)
+    parser.feed(b"--boundary  ")
+
+    with pytest.raises(RuntimeError, match="Part exceeds maximum total header size"):
+        parser.feed(b"   ")
+
+
+def test_total_header_size_counts_boundary_padding() -> None:
+    header_section = b"X: 1\r\n\r\n"
+    maximum_size = len(b"\r\n") + len(header_section)
+    parser = MultipartParser(b"boundary", max_total_header_size=maximum_size)
+    parser.feed(b"--boundary\r\n" + header_section + b"data\r\n--boundary--")
+    parser.finish()
+
+    parser = MultipartParser(b"boundary", max_total_header_size=maximum_size)
+    with pytest.raises(RuntimeError, match="Part exceeds maximum total header size"):
+        parser.feed(b"--boundary \r\n" + header_section)
+
+    parser = MultipartParser(b"boundary", max_total_header_size=maximum_size)
+    with pytest.raises(RuntimeError, match="Part exceeds maximum total header size"):
+        parser.feed(b"--boundary\r\n" + header_section + b"data\r\n--boundary \r\n" + header_section)
+
+
 def test_enforces_maximum_total_header_size_across_lines() -> None:
     parser = MultipartParser(b"boundary", max_total_header_size=13)
 
@@ -331,7 +356,7 @@ def test_enforces_maximum_total_header_size_across_lines() -> None:
 
 
 def test_total_header_size_counts_split_terminating_crlf() -> None:
-    parser = MultipartParser(b"boundary", max_total_header_size=7)
+    parser = MultipartParser(b"boundary", max_total_header_size=9)
     parser.feed(b"--boundary\r\nX: 1\r\n\r")
 
     with pytest.raises(RuntimeError, match="Part exceeds maximum total header size"):
@@ -339,14 +364,14 @@ def test_total_header_size_counts_split_terminating_crlf() -> None:
 
 
 def test_total_header_size_counts_empty_header_section() -> None:
-    parser = MultipartParser(b"boundary", max_total_header_size=2)
+    parser = MultipartParser(b"boundary", max_total_header_size=4)
     events = parser.feed(b"--boundary\r\n\r\ndata\r\n--boundary--")
 
     parser.finish()
     assert isinstance(events[0], PartBegin)
     assert events[0].headers == []
 
-    parser = MultipartParser(b"boundary", max_total_header_size=1)
+    parser = MultipartParser(b"boundary", max_total_header_size=3)
     with pytest.raises(RuntimeError, match="Part exceeds maximum total header size"):
         parser.feed(b"--boundary\r\n\r\n")
 
@@ -362,7 +387,10 @@ def test_total_header_size_is_enforced_per_part_and_excludes_body() -> None:
         + b"y" * 4096
         + b"\r\n--boundary--"
     )
-    parser = MultipartParser(b"boundary", max_total_header_size=len(header_section))
+    parser = MultipartParser(
+        b"boundary",
+        max_total_header_size=len(b"\r\n") + len(header_section),
+    )
 
     events = parser.feed(body)
 

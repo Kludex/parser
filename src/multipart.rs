@@ -133,8 +133,10 @@ impl MultipartParser {
                 continue;
             }
 
-            match delimiter_suffix(&self.buffer, index + self.dash_boundary.len()) {
+            let after_boundary = index + self.dash_boundary.len();
+            match delimiter_suffix(&self.buffer, after_boundary) {
                 DelimiterSuffix::Open(consumed) => {
+                    self.current_total_header_size = consumed - after_boundary;
                     self.buffer.drain(..consumed);
                     self.state = MultipartState::Header;
                     return Ok(true);
@@ -145,6 +147,7 @@ impl MultipartParser {
                     return Ok(true);
                 }
                 DelimiterSuffix::Incomplete => {
+                    self.check_incomplete_header_prefix(after_boundary)?;
                     self.buffer.drain(..index);
                     return Ok(false);
                 }
@@ -218,12 +221,21 @@ impl MultipartParser {
         Ok(())
     }
 
+    fn check_incomplete_header_prefix(&self, after_boundary: usize) -> PyResult<()> {
+        let suffix = &self.buffer[after_boundary..];
+        if !suffix.starts_with(b"-") {
+            self.check_total_header_size(suffix.len())?;
+        }
+        Ok(())
+    }
+
     fn handle_body(&mut self, events: &mut Vec<MultipartEvent>) -> PyResult<bool> {
         let mut search_from = 0;
         while let Some(relative_index) = self.delimiter_finder.find(&self.buffer[search_from..]) {
             let index = search_from + relative_index;
             match delimiter_suffix(&self.buffer, index + self.delimiter_length) {
                 DelimiterSuffix::Open(consumed) => {
+                    self.current_total_header_size = consumed - (index + self.delimiter_length);
                     self.emit_data(events, index);
                     events.push(MultipartEvent::PartEnd);
                     self.buffer.drain(..consumed);
@@ -238,6 +250,7 @@ impl MultipartParser {
                     return Ok(true);
                 }
                 DelimiterSuffix::Incomplete => {
+                    self.check_incomplete_header_prefix(index + self.delimiter_length)?;
                     self.emit_data(events, index);
                     self.buffer.drain(..index);
                     return Ok(false);
