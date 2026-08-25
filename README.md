@@ -34,6 +34,12 @@ You can call `feed()` repeatedly with partial input. Each call returns the batch
 parser never accumulates part bodies, so memory stays bounded regardless of upload size. Call `finish()` once the
 input ends: it raises `ValueError` if the closing boundary was never received.
 
+The parser accepts optional resource limits. `max_size` bounds all bytes passed to `feed()`, `max_header_count`
+bounds the number of headers in each part, and `max_header_size` bounds each raw header line without its CRLF.
+`max_total_header_size` bounds the complete raw header section for each part, including every header-line CRLF and
+the final blank CRLF, but excluding the boundary delimiter line. All limits are inclusive; set
+`max_total_header_size=None` to leave the aggregate header size unlimited.
+
 Use `parse_options_header()` to parse header values like `Content-Disposition`:
 
 ```python
