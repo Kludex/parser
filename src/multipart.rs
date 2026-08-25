@@ -40,6 +40,7 @@ pub struct MultipartParser {
     max_size: Option<usize>,
     max_header_count: usize,
     max_header_size: usize,
+    max_total_header_size: Option<usize>,
     state: MultipartState,
     buffer: Vec<u8>,
     dash_boundary: Vec<u8>,
@@ -49,10 +50,17 @@ pub struct MultipartParser {
     delimiter_finder: Box<memmem::Finder<'static>>,
     size: usize,
     current_headers: Vec<(Vec<u8>, Vec<u8>)>,
+    current_total_header_size: usize,
 }
 
 impl MultipartParser {
-    pub fn new(boundary: Vec<u8>, max_size: Option<usize>, max_header_count: usize, max_header_size: usize) -> PyResult<Self> {
+    pub fn new(
+        boundary: Vec<u8>,
+        max_size: Option<usize>,
+        max_header_count: usize,
+        max_header_size: usize,
+        max_total_header_size: Option<usize>,
+    ) -> PyResult<Self> {
         // RFC 2046 section 5.1.1 limits boundary values to 70 characters.
         if boundary.is_empty() || boundary.len() > 70 {
             return Err(PyValueError::new_err("Boundary length must be between 1 and 70 characters."));
@@ -66,6 +74,7 @@ impl MultipartParser {
             max_size,
             max_header_count,
             max_header_size,
+            max_total_header_size,
             state: MultipartState::Preamble,
             buffer: Vec::new(),
             dash_boundary,
@@ -74,6 +83,7 @@ impl MultipartParser {
             delimiter_finder,
             size: 0,
             current_headers: Vec::new(),
+            current_total_header_size: 0,
         })
     }
 
@@ -123,8 +133,10 @@ impl MultipartParser {
                 continue;
             }
 
-            match delimiter_suffix(&self.buffer, index + self.dash_boundary.len()) {
+            let after_boundary = index + self.dash_boundary.len();
+            match delimiter_suffix(&self.buffer, after_boundary) {
                 DelimiterSuffix::Open(consumed) => {
+                    self.current_total_header_size = consumed - after_boundary;
                     self.buffer.drain(..consumed);
                     self.state = MultipartState::Header;
                     return Ok(true);
@@ -135,6 +147,7 @@ impl MultipartParser {
                     return Ok(true);
                 }
                 DelimiterSuffix::Incomplete => {
+                    self.check_incomplete_header_prefix(after_boundary)?;
                     self.buffer.drain(..index);
                     return Ok(false);
                 }
@@ -155,10 +168,12 @@ impl MultipartParser {
     fn handle_header(&mut self, events: &mut Vec<MultipartEvent>) -> PyResult<bool> {
         if let Some(index) = memmem::find(&self.buffer, CRLF) {
             if index == 0 {
+                self.check_total_header_size(CRLF.len())?;
                 self.buffer.drain(..CRLF.len());
                 events.push(MultipartEvent::PartBegin {
                     headers: std::mem::take(&mut self.current_headers),
                 });
+                self.current_total_header_size = 0;
                 self.state = MultipartState::Body;
                 return Ok(true);
             }
@@ -168,6 +183,7 @@ impl MultipartParser {
             if self.current_headers.len() == self.max_header_count {
                 return Err(PyRuntimeError::new_err("Part exceeds maximum header count."));
             }
+            self.check_total_header_size(index + CRLF.len())?;
             let line = &self.buffer[..index];
             if memchr::memchr2(b'\r', b'\n', line).is_some() {
                 return Err(PyValueError::new_err("Invalid line break in header"));
@@ -179,6 +195,7 @@ impl MultipartParser {
             }
             let value = line[separator + 1..].trim_ascii();
             self.current_headers.push((name.to_vec(), value.to_vec()));
+            self.current_total_header_size = self.current_total_header_size.saturating_add(index + CRLF.len());
             self.buffer.drain(..index + CRLF.len());
             return Ok(true);
         }
@@ -190,7 +207,26 @@ impl MultipartParser {
         if pending > self.max_header_size {
             return Err(PyRuntimeError::new_err("Header line exceeds maximum size."));
         }
+        self.check_total_header_size(self.buffer.len())?;
         Ok(false)
+    }
+
+    fn check_total_header_size(&self, additional_size: usize) -> PyResult<()> {
+        if self
+            .max_total_header_size
+            .is_some_and(|max_size| self.current_total_header_size.saturating_add(additional_size) > max_size)
+        {
+            return Err(PyRuntimeError::new_err("Part exceeds maximum total header size."));
+        }
+        Ok(())
+    }
+
+    fn check_incomplete_header_prefix(&self, after_boundary: usize) -> PyResult<()> {
+        let suffix = &self.buffer[after_boundary..];
+        if !suffix.starts_with(b"-") {
+            self.check_total_header_size(suffix.len())?;
+        }
+        Ok(())
     }
 
     fn handle_body(&mut self, events: &mut Vec<MultipartEvent>) -> PyResult<bool> {
@@ -199,6 +235,7 @@ impl MultipartParser {
             let index = search_from + relative_index;
             match delimiter_suffix(&self.buffer, index + self.delimiter_length) {
                 DelimiterSuffix::Open(consumed) => {
+                    self.current_total_header_size = consumed - (index + self.delimiter_length);
                     self.emit_data(events, index);
                     events.push(MultipartEvent::PartEnd);
                     self.buffer.drain(..consumed);
@@ -213,6 +250,7 @@ impl MultipartParser {
                     return Ok(true);
                 }
                 DelimiterSuffix::Incomplete => {
+                    self.check_incomplete_header_prefix(index + self.delimiter_length)?;
                     self.emit_data(events, index);
                     self.buffer.drain(..index);
                     return Ok(false);
